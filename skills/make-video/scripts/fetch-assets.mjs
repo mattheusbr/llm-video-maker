@@ -10,7 +10,8 @@
 //   { "type": "gif",   "query": "mind blown", "out": "gifs/mind-blown.mp4" }          // Giphy/Tenor (key) — saved as mp4
 //   { "type": "meme",  "template": "Drake Hotline Bling", "out": "memes/drake.jpg" }  // imgflip templates, keyless
 //   { "type": "video", "query": "typing on laptop", "out": "vid/typing.mp4", "orientation": "landscape", "max_s": 15 }
-//   { "type": "sfx",   "query": "whoosh transition", "out": "sfx/whoosh.mp3", "max_s": 4 }   // Freesound CC0
+//   { "type": "sfx",   "name": "whoosh", "out": "sfx/whoosh.mp3" }                          // layer 1: bundled library (no key)
+//   { "type": "sfx",   "query": "cash register", "out": "sfx/cash.mp3", "max_s": 3 }        // layer 2: Freesound CC0 (key)
 //   { "type": "web",   "url": "https://…/file.png", "out": "img/chart.png",
 //     "license": "CC-BY 4.0", "source": "https://…/page" }                            // license fields REQUIRED
 //   { "type": "capture", "url": "https://myapp.dev", "out": "demo/tour.mp4",
@@ -20,12 +21,12 @@
 // Pixabay images+videos (PIXABAY_API_KEY), Pexels images+videos (PEXELS_API_KEY),
 // Giphy (GIPHY_API_KEY) / Tenor (TENOR_API_KEY), Freesound CC0 (FREESOUND_API_KEY),
 // OpenAI image gen (OPENAI_API_KEY, opt-in via IMAGE_GEN=openai),
-// live browser capture via pipeline/capture-demo.mjs (system Chrome).
+// live browser capture via capture-demo.mjs (system Chrome).
 // imagegen default: write a .prompt.json sidecar — the composition renders a styled placeholder slot.
 // Everything is vendored locally with license sidecars; compositions must never hotlink
 // (determinism contract — the only network is at BUILD time, right here).
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { join, dirname, resolve, sep, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,22 +48,66 @@ function save(ctx, out, data) {
   return p;
 }
 
+// API keys travel in the query string (Pixabay, Giphy, Tenor, Freesound): never let them reach an
+// error message — those land in the console, manifest.resolved.json and the model's context.
+const SECRET_PARAMS = ["key", "api_key", "apikey", "token", "access_token", "client_secret"];
+export function redactUrl(url) {
+  try {
+    const u = new URL(String(url));
+    for (const p of SECRET_PARAMS) if (u.searchParams.has(p)) u.searchParams.set(p, "REDACTED");
+    return u.toString();
+  } catch {
+    return String(url).replace(/([?&](?:key|api_key|apikey|token|access_token|client_secret)=)[^&]*/gi, "$1REDACTED");
+  }
+}
+
 async function fetchOk(ctx, url, init = {}) {
   const timeout = init.timeoutMs ?? FETCH_TIMEOUT_MS;
   const r = await ctx.fetchImpl(url, { ...init, signal: init.signal ?? AbortSignal.timeout(timeout) });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText} — ${url}`);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} — ${redactUrl(url)}`);
   const len = +(r.headers.get("content-length") || 0);
-  if (len > MAX_RESPONSE_BYTES) throw new Error(`response too large (${len} bytes) — ${url}`);
+  if (len > MAX_RESPONSE_BYTES) throw new Error(`response too large (${len} bytes) — ${redactUrl(url)}`);
   return r;
+}
+
+// Manifests are LLM-authored: only http(s), and never loopback/private/link-local hosts
+// (cloud metadata, intranet) unless the caller opts in (capture may demo http://localhost).
+export function assertSafeUrl(raw, { allowLocal = false } = {}) {
+  let u;
+  try { u = new URL(String(raw)); } catch { throw new Error(`invalid URL: ${redactUrl(raw)}`); }
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`only http(s) URLs are allowed (got ${u.protocol}) — ${redactUrl(raw)}`);
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const local = h === "localhost" || h.endsWith(".localhost") || h === "::1" || h === "::" ||
+    /^(127|10|0)\./.test(h) || /^169\.254\./.test(h) || /^192\.168\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^(fc|fd|fe80)/.test(h) || h.endsWith(".internal");
+  if (local && !allowLocal) throw new Error(`local/private address refused — ${redactUrl(raw)}`);
+  return u;
 }
 
 // binary download with the size cap enforced on the ACTUAL bytes (content-length may
 // be absent) and a generous timeout — stock videos/gifs routinely outlive 20s.
 async function fetchBuf(ctx, url, init = {}) {
   const r = await fetchOk(ctx, url, { timeoutMs: 120_000, ...init });
-  const buf = await r.arrayBuffer();
-  if (buf.byteLength > MAX_RESPONSE_BYTES) throw new Error(`response too large (${buf.byteLength} bytes) — ${url}`);
-  return Buffer.from(buf);
+  if (!r.body || typeof r.body.getReader !== "function") {
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength > MAX_RESPONSE_BYTES) throw new Error(`response too large (${buf.byteLength} bytes) — ${redactUrl(url)}`);
+    return Buffer.from(buf);
+  }
+  // stream with a running byte cap, so a response without content-length cannot exhaust memory
+  const chunks = [];
+  let total = 0;
+  const reader = r.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error(`response too large (> ${MAX_RESPONSE_BYTES} bytes) — ${redactUrl(url)}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
 }
 
 async function icon(e, ctx) {
@@ -81,6 +126,11 @@ async function brand(e, ctx) {
   return save(ctx, e.out, svg);
 }
 
+// One vocabulary in the manifest (landscape | portrait/vertical | square), mapped per provider.
+const norm = (o) => ({ horizontal: "landscape", landscape: "landscape", vertical: "portrait", portrait: "portrait", square: "square" })[String(o || "").toLowerCase()] || null;
+const pixabayOrientation = (o) => ({ landscape: "horizontal", portrait: "vertical" })[norm(o)] || "all";
+const pexelsOrientation = (o) => norm(o) || "landscape";
+
 async function image(e, ctx) {
   const provider = e.provider || (ctx.env.PIXABAY_API_KEY ? "pixabay" : "pexels");
   if (provider === "pixabay") {
@@ -90,7 +140,7 @@ async function image(e, ctx) {
     u.searchParams.set("key", key);
     u.searchParams.set("q", e.query);
     u.searchParams.set("image_type", "photo");
-    u.searchParams.set("orientation", e.orientation || "all");
+    u.searchParams.set("orientation", pixabayOrientation(e.orientation));
     u.searchParams.set("safesearch", "true");
     u.searchParams.set("per_page", "5");
     const j = await (await fetchOk(ctx, u)).json();
@@ -108,7 +158,7 @@ async function image(e, ctx) {
     if (!key) throw new Error("PEXELS_API_KEY not set");
     const u = new URL("https://api.pexels.com/v1/search");
     u.searchParams.set("query", e.query);
-    u.searchParams.set("orientation", e.orientation === "vertical" ? "portrait" : e.orientation || "landscape");
+    u.searchParams.set("orientation", pexelsOrientation(e.orientation));
     u.searchParams.set("per_page", "5");
     const j = await (await fetchOk(ctx, u, { headers: { Authorization: key } })).json();
     const hit = j.photos?.[0];
@@ -209,7 +259,7 @@ async function video(e, ctx) {
     if (!key) throw new Error("PEXELS_API_KEY not set");
     const u = new URL("https://api.pexels.com/videos/search");
     u.searchParams.set("query", e.query);
-    u.searchParams.set("orientation", e.orientation === "vertical" ? "portrait" : e.orientation || "landscape");
+    u.searchParams.set("orientation", pexelsOrientation(e.orientation));
     u.searchParams.set("per_page", "10");
     const j = await (await fetchOk(ctx, u, { headers: { Authorization: key } })).json();
     const hit = (j.videos || []).find(v => !e.max_s || v.duration <= e.max_s) || j.videos?.[0];
@@ -247,24 +297,68 @@ async function video(e, ctx) {
   throw new Error(`unknown video provider: ${provider}`);
 }
 
-async function sfx(e, ctx) {
+// SFX in two layers (both vendored; the composition never hotlinks):
+//  1. `name`  → bundled media-use library (21 curated Pixabay-license files, no key, no network).
+//  2. `query` → Freesound CC0 search; takes the top results by relevance and picks the best
+//     rated / most downloaded one (objective tie-break, no model tokens, no blind results[0]).
+const SFX_LIB_DIRS = [".agents/skills/media-use/audio/assets/sfx", ".claude/skills/media-use/audio/assets/sfx"];
+
+function sfxLibrary(ctx) {
+  const base = ctx.root || process.cwd();
+  for (const d of ctx.sfxLib ? [ctx.sfxLib] : SFX_LIB_DIRS.map((x) => resolve(base, x))) {
+    const mf = join(d, "manifest.json");
+    if (!existsSync(mf)) continue;
+    const m = JSON.parse(readFileSync(mf, "utf8"));
+    return { dir: d, items: m.sounds ?? m };
+  }
+  return null;
+}
+
+const slug = (s) => String(s).toLowerCase().replace(/\.mp3$/, "").trim().replace(/[\s_]+/g, "-");
+
+function sfxFromLibrary(e, ctx) {
+  const lib = sfxLibrary(ctx);
+  if (!lib) throw new Error("sfx library not found — run `npx skills add heygen-com/hyperframes --all` (media-use)");
+  const key = Object.keys(lib.items).find((k) => slug(k) === slug(e.name));
+  if (!key) throw new Error(`no bundled sfx "${e.name}" — available: ${Object.keys(lib.items).join(", ")}; or use "query" for Freesound`);
+  const file = lib.items[key].file || `${key}.mp3`;
+  const p = safePath(ctx.dest, e.out);
+  mkdirSync(dirname(p), { recursive: true });
+  copyFileSync(join(lib.dir, file), p);
+  save(ctx, e.out + ".credit.json", JSON.stringify({
+    name: key, provider: "media-use bundled library (Pixabay)", license: "Pixabay Content License",
+    source: "https://pixabay.com/service/license-summary/", duration_s: lib.items[key].duration ?? null,
+  }, null, 2));
+  return p;
+}
+
+async function sfxFromFreesound(e, ctx) {
   const key = ctx.env.FREESOUND_API_KEY;
-  if (!key) throw new Error("FREESOUND_API_KEY not set (free at freesound.org/apiv2/apply)");
+  if (!key) throw new Error("FREESOUND_API_KEY not set (free at freesound.org/apiv2/apply) — or use a bundled `name`");
   const u = new URL("https://freesound.org/apiv2/search/text/");
   u.searchParams.set("query", e.query);
   u.searchParams.set("filter", `license:"Creative Commons 0"${e.max_s ? ` duration:[0 TO ${e.max_s}]` : ""}`);
-  u.searchParams.set("fields", "id,name,username,license,previews,url,duration");
+  u.searchParams.set("fields", "id,name,username,license,previews,url,duration,avg_rating,num_ratings,num_downloads");
   u.searchParams.set("sort", "score");
+  u.searchParams.set("page_size", "8");
   u.searchParams.set("token", key);
   const j = await (await fetchOk(ctx, u)).json();
-  const hit = j.results?.[0];
-  if (!hit) throw new Error(`no CC0 freesound results for "${e.query}"`);
+  const results = j.results || [];
+  if (!results.length) throw new Error(`no CC0 freesound results for "${e.query}"`);
+  const quality = (r) => (r.num_ratings >= 2 ? r.avg_rating : 0) * 1e6 + (r.num_downloads || 0);
+  const hit = [...results].sort((a, b) => quality(b) - quality(a))[0];
   const buf = await fetchBuf(ctx, hit.previews["preview-hq-mp3"]);
   save(ctx, e.out + ".credit.json", JSON.stringify({
     name: hit.name, author: hit.username, source: hit.url, provider: "Freesound",
-    license: "CC0 1.0", duration_s: hit.duration,
+    license: "CC0 1.0", duration_s: hit.duration, avg_rating: hit.avg_rating, downloads: hit.num_downloads,
   }, null, 2));
   return save(ctx, e.out, buf);
+}
+
+async function sfx(e, ctx) {
+  if (e.name) return sfxFromLibrary(e, ctx);
+  if (e.query) return sfxFromFreesound(e, ctx);
+  throw new Error('sfx entry needs "name" (bundled library) or "query" (Freesound)');
 }
 
 async function web(e, ctx) {
@@ -274,6 +368,7 @@ async function web(e, ctx) {
   if (!e.license || !e.source) {
     throw new Error(`web asset "${e.out}" missing license/source — record where it came from and under what terms, or use a provider type`);
   }
+  assertSafeUrl(e.url);
   const buf = await fetchBuf(ctx, e.url);
   save(ctx, e.out + ".credit.json", JSON.stringify({
     source: e.source, directUrl: e.url, license: e.license, note: e.note || null,
@@ -283,6 +378,7 @@ async function web(e, ctx) {
 
 async function capture(e, ctx) {
   // Live browser demonstration (any URL, incl. http://localhost — local app demos).
+  assertSafeUrl(e.url, { allowLocal: true }); // http(s) only; localhost is the point of a local demo
   const { captureDemo } = await import("./capture-demo.mjs");
   const outPath = safePath(ctx.dest, e.out);
   mkdirSync(dirname(outPath), { recursive: true });

@@ -81,8 +81,7 @@ them before use; never feed them raw into a shell or a filesystem path.
    `index.html`, or their sub-composition files). Word-synced beats still come from
    `words.json` timestamps (transcript-locked projects; audio-first projects keep their
    reconciled scene clocks). Do not reflow other scenes' code.
-4. **Validate** (full gate, max 3 iterations — the loop is not optional for edits):
-   lint → WCAG → inspect → snapshot the EDITED chapter's frames + one frame each side of its
+4. **Validate** (one pass, same as make-video stage 5): run `node .claude/skills/make-video/scripts/check.mjs projects/<id>` once, fix all findings in one edit round, re-run once; then snapshot the EDITED chapter's frames + one frame each side of its
    boundaries (transition integrity). Fresh-context vision pass on those frames.
 5. **Re-render the full video** (v0): same command as make-video stage 6. Then QA: ffprobe +
    extract 2-3 frames inside the edited window; transcript-locked + captions → re-verify

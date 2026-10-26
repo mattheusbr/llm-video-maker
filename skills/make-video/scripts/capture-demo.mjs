@@ -47,10 +47,13 @@ async function loadChromium() {
 }
 
 export async function captureDemo({ url, actions = { steps: [] }, out = "demo.mp4", width = 1280, height = 800, settle = 1000 }) {
+  if (!/^https?:\/\//i.test(String(url))) throw new Error(`capture only supports http(s) URLs (got "${url}")`);
   const chromium = await loadChromium();
   const videoDir = resolve(tmpdir(), `vm-capture-${process.pid}`);
   mkdirSync(videoDir, { recursive: true });
 
+  let recording;
+  try {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const context = await browser.newContext({
     viewport: { width, height },
@@ -58,7 +61,7 @@ export async function captureDemo({ url, actions = { steps: [] }, out = "demo.mp
     deviceScaleFactor: 2,
   });
   const page = await context.newPage();
-  const recording = page.video(); // grab the handle BEFORE close — its path() resolves after
+  recording = page.video(); // grab the handle BEFORE close — its path() resolves after
 
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
@@ -94,6 +97,11 @@ export async function captureDemo({ url, actions = { steps: [] }, out = "demo.mp
   } finally {
     await context.close(); // flushes the recording
     await browser.close();
+  }
+  } catch (err) {
+    // launch/goto/step failures must not leak the temp recording dir
+    rmSync(videoDir, { recursive: true, force: true });
+    throw err;
   }
 
   try {

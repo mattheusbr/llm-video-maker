@@ -155,18 +155,18 @@
         "engine": {
           "type": "string",
           "enum": [
-            "kokoro",
-            "openai"
+            "kokoro"
           ],
           "default": "kokoro"
         },
         "voice": {
           "type": "string",
-          "default": "af_heart"
+          "default": "pf_dora",
+          "description": "Kokoro pt-BR voices: pf_dora (female, default), pm_alex, pm_santa (male)."
         },
         "language": {
           "type": "string",
-          "default": "en-us"
+          "default": "pt-br"
         },
         "audio_file": {
           "type": "string",
@@ -174,7 +174,7 @@
         },
         "transcript_file": {
           "type": "string",
-          "description": "user-audio mode: path to the timestamped transcript (.srt, .vtt, or whisper/hyperframes JSON). Sentence- or paragraph-level timestamps; normalized by pipeline/normalize-transcript.mjs. If absent but audio_file is set, the pipeline transcribes locally (hyperframes transcribe)."
+          "description": "user-audio mode: path to the timestamped transcript (.srt, .vtt, or whisper/hyperframes JSON). Sentence- or paragraph-level timestamps; normalized by pipeline/normalize-transcript.mjs. If absent but audio_file is set, the pipeline transcribes locally (scripts/captions_pt.py)."
         }
       }
     },
@@ -219,6 +219,23 @@
         "file": {
           "type": "string",
           "description": "Path to a licensed local track. No music API exists; tracks are curated locally."
+        }
+      }
+    },
+    "sfx": {
+      "type": "object",
+      "description": "Sound effects mixed under the narration. Two layers: the bundled library (default, no key) and Freesound CC0 for specific sounds (FREESOUND_API_KEY).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "level": {
+          "type": "number",
+          "default": 0.35,
+          "minimum": 0.05,
+          "maximum": 1,
+          "description": "data-volume of each effect (narration stays at 1)."
         }
       }
     },
@@ -271,12 +288,10 @@
           "type": "string",
           "enum": [
             "placeholder",
-            "openai",
-            "fal",
-            "none"
+            "openai"
           ],
           "default": "placeholder",
-          "description": "placeholder = render styled slots carrying the generation prompt; openai/fal = actually generate (API key required)."
+          "description": "placeholder = render styled slots carrying the generation prompt; openai = actually generate (OPENAI_API_KEY required)."
         }
       }
     },

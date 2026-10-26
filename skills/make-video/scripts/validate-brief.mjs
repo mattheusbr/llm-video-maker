@@ -15,12 +15,12 @@ import { fileURLToPath } from "node:url";
 const PLATFORM_PRESETS = ["tiktok", "reels", "shorts", "youtube", "square"];
 const FPS_VALUES = [24, 25, 30, 50, 60];
 const NARRATION_MODES = ["none", "tts", "user-audio"];
-const NARRATION_ENGINES = ["kokoro", "openai"];
+const NARRATION_ENGINES = ["kokoro"]; // local only: scripts/tts_pt.py
 const STYLE_PRESETS = [
   "bold-energetic", "warm-editorial", "dark-premium", "clean-corporate",
   "nature-earth", "neon-electric", "pastel-soft", "jewel-rich", "monochrome",
 ];
-const IMAGE_GEN_MODES = ["placeholder", "openai", "fal", "none"];
+const IMAGE_GEN_MODES = ["placeholder", "openai"]; // the only modes fetch-assets.mjs implements
 const OUTPUT_FORMATS = ["mp4", "webm", "mov", "gif"];
 const OUTPUT_QUALITIES = ["draft", "standard", "high"];
 const TRANSCRIPT_EXTS = [".srt", ".vtt", ".json"];
@@ -103,7 +103,7 @@ export function validateBrief(brief, { briefDir = process.cwd() } = {}) {
       if (!TRANSCRIPT_EXTS.includes(ext))
         err(`narration.transcript_file has extension "${ext}" — supported: ${TRANSCRIPT_EXTS.join(", ")}`);
     } else if (brief.narration.audio_file) {
-      warn(`no transcript_file — the pipeline will transcribe the audio locally (hyperframes transcribe) before storyboarding`);
+      warn(`no transcript_file — the pipeline will transcribe the audio locally (scripts/captions_pt.py) before storyboarding`);
     }
   }
 
@@ -115,7 +115,7 @@ export function validateBrief(brief, { briefDir = process.cwd() } = {}) {
     if (typeof brief.duration_s !== "number" || brief.duration_s < 5 || brief.duration_s > 600)
       err(`duration_s ${brief.duration_s} out of range — must be 5–600 seconds`);
     if (mode === "user-audio")
-      warn(`duration_s is ignored in user-audio mode (the recording owns the clock); it is only checked for >5% divergence`);
+      warn(`duration_s is ignored in user-audio mode (the recording owns the clock)`);
   }
 
   // chapters
@@ -124,6 +124,7 @@ export function validateBrief(brief, { briefDir = process.cwd() } = {}) {
     else {
       const ids = new Set();
       brief.chapters.forEach((c, i) => {
+        if (c === null || typeof c !== "object" || Array.isArray(c)) { err(`chapters[${i}] must be an object with "id" and "title"`); return; }
         if (!c.id || !c.title) err(`chapters[${i}] needs both "id" and "title"`);
         if (c.id && ids.has(c.id)) err(`duplicate chapter id "${c.id}" — chapter ids must be unique (they address re-renders)`);
         ids.add(c.id);

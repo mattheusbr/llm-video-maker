@@ -10,14 +10,27 @@ design, storyboard, assets, composição em HTML/GSAP, validação e render com 
 
 ## O que este fork muda em relação ao original
 
-- Removidos `media/` e `examples/` (cerca de 19 MB cada, vídeos de demonstração do autor original) e
-  os trechos do README que dependiam deles. Ficou só o que o pipeline usa: as skills.
+- **Enxugado:** removidos `media/` e `examples/` (cerca de 19 MB cada, vídeos de demonstração do autor original).
+- **Narração e legendas em pt-BR, locais:** `tts_pt.py` (Kokoro-82M, voz `pf_dora` por padrão) e
+  `captions_pt.py` (faster-whisper `base` multilíngue, palavra a palavra, áudio decodificado pelo FFmpeg).
+  O motor de voz do schema é só `kokoro`.
+- **Validação em uma passada:** `check.mjs` roda lint, validate (console e contraste) e inspect e imprime um
+  relatório compacto.
+- **Economia de tokens:** `make-video/SKILL.md` reescrito (de 28 KB para cerca de 15 KB) com regras de trabalho
+  (sem worktree, sem reescrever arquivos, um passe de validação), `design/design.md` fixo opcional e
+  no máximo uma cena a cada 5 s.
+- **SFX em duas camadas:** biblioteca embutida da skill `media-use` (padrão, sem chave) e Freesound CC0 para sons
+  específicos, escolhendo o resultado por nota e downloads. Campo `sfx` no schema.
+- **Correções de revisão de código:**
+  - a chave de API deixa de aparecer em mensagens de erro;
+  - URLs do manifesto só aceitam http(s) e recusam endereços locais e privados (`capture` aceita `localhost`);
+  - download com limite de tamanho em streaming;
+  - orientação de imagem mapeada por provedor (Pixabay e Pexels);
+  - `plan-scenes --check` passa a reportar cenas sem `segmentIds` ou sem tempo válido;
+  - o validador não quebra com `chapters` inválido e rejeita `image_gen` não implementado;
+  - `analyze-codebase` ignora badges do README e lê só o commit raiz;
+  - `capture-demo` não deixa a pasta temporária para trás em caso de falha.
 - README reescrito em português.
-
-Estado atual: as **skills em `skills/` ainda são as do upstream, sem alterações**. As adaptações
-feitas no motion-ia (narração e legendas em pt-BR com Kokoro e faster-whisper, validação em uma
-passada com `check.mjs`, SFX em duas camadas, regras de economia de tokens) vivem hoje em
-`.claude/skills/` daquele projeto e serão trazidas para este fork aos poucos.
 
 Para acompanhar o original:
 
@@ -29,7 +42,7 @@ git fetch upstream
 ## Conteúdo
 
 ```
-skills/make-video/   /make-video: brief → pesquisa → design → storyboard → assets → composição → validação → MP4 + relatório
+skills/make-video/   /make-video: brief → design → storyboard → assets → composição → validação → MP4 + relatório (scripts: tts_pt, captions_pt, check, fetch-assets…)
 skills/edit-video/   /edit-video: refaz só um capítulo de um vídeo já gerado
 LICENSE              MIT, copyright do autor original
 ```

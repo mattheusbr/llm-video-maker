@@ -11,7 +11,7 @@
 //   → asserts the storyboard's scenes cover every segment exactly once and that scene
 //     boundaries sit inside segment gaps (±0.3s). Exit 1 with violations otherwise.
 //
-// Mapping rules (mirror .claude/skills/make-video/SKILL.md stage 2):
+// Mapping rules (mirror skills/make-video/SKILL.md stage 2):
 //   - merge consecutive segments until the scene span ≥ MIN_SCENE (2.5s), but never
 //     merge across a breathing gap (≥ GAP_BREATH = 1.5s)
 //   - a trailing short segment that cannot reach MIN_SCENE joins the previous scene
@@ -79,12 +79,18 @@ export function checkCoverage(segments, scenes, { tol = BOUNDARY_TOL } = {}) {
   const segById = new Map(segments.map(s => [s.id, s]));
   const seen = new Map(); // segment id → scene id
 
-  const timed = scenes
-    .filter(s => Array.isArray(s.segmentIds))
-    .map(s => ({ ...s, end: s.end ?? +(s.start + s.duration).toFixed(3) }))
-    .sort((a, b) => a.start - b.start);
+  // every scene must be checkable: segmentIds[] plus finite start and end (or duration).
+  // Silently skipping a malformed scene would print "coverage OK" over an unchecked storyboard.
+  const timed = [];
+  for (const s of scenes) {
+    if (!Array.isArray(s.segmentIds)) { violations.push(`scene ${s.id}: missing segmentIds[] — every scene must map to transcript segments`); continue; }
+    const end = s.end ?? (Number.isFinite(s.duration) ? +(s.start + s.duration).toFixed(3) : NaN);
+    if (!Number.isFinite(s.start) || !Number.isFinite(end)) { violations.push(`scene ${s.id}: needs a finite "start" and an "end" (or "duration")`); continue; }
+    timed.push({ ...s, end });
+  }
+  timed.sort((a, b) => a.start - b.start);
 
-  if (!timed.length) return ["no scenes carry segmentIds — transcript-locked storyboards must map every scene to segments"];
+  if (!timed.length) return [...violations, "no scenes carry valid segmentIds and timing — transcript-locked storyboards must map every scene to segments"];
 
   for (const scene of timed) {
     for (const id of scene.segmentIds) {
@@ -126,12 +132,12 @@ export function checkCoverage(segments, scenes, { tol = BOUNDARY_TOL } = {}) {
 
 function loadTranscript(path) {
   if (!existsSync(resolve(path))) {
-    console.error(`transcript not found: ${path} — run pipeline/normalize-transcript.mjs first`);
+    console.error(`transcript not found: ${path} — run scripts/normalize-transcript.mjs first`);
     process.exit(1);
   }
   const t = JSON.parse(readFileSync(resolve(path), "utf8"));
   if (!Array.isArray(t.segments)) {
-    console.error(`${path} is not a canonical transcript (missing segments[]) — run pipeline/normalize-transcript.mjs`);
+    console.error(`${path} is not a canonical transcript (missing segments[]) — run scripts/normalize-transcript.mjs`);
     process.exit(1);
   }
   return t;

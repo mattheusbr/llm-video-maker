@@ -59,11 +59,12 @@ export function readmeFactsFrom(content, fileName) {
   const prose = content.replace(/```[\s\S]*?```/g, "");
   const lines = prose.split("\n");
   const headings = lines.filter(l => /^#{1,3}\s/.test(l)).map(l => l.replace(/^#+\s*/, "")).slice(0, 12);
-  const firstPara = content
+  // from the fence-stripped prose; skip headings, images, html and badge lines ([![alt](img)](link))
+  const firstPara = prose
     .replace(/^#.*$/m, "")
     .split(/\n\s*\n/)
     .map(s => s.trim())
-    .find(s => s && !s.startsWith("#") && !s.startsWith("![") && !s.startsWith("<") && s.length > 40) || null;
+    .find(s => s && !s.startsWith("#") && !s.startsWith("![") && !s.startsWith("[![") && !s.startsWith("<") && s.length > 40) || null;
   const bullets = lines.filter(l => /^\s*[-*]\s+\S/.test(l)).map(l => l.replace(/^\s*[-*]\s+/, "").trim()).slice(0, 20);
   return { file: fileName, firstParagraph: firstPara, headings, bullets };
 }
@@ -74,7 +75,7 @@ export function analyze(repo) {
 
   function git(...cmdArgs) {
     try {
-      return execFileSync("git", ["-C", repo, ...cmdArgs], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+      return execFileSync("git", ["-C", repo, ...cmdArgs], { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();
     } catch { return null; }
   }
 
@@ -142,7 +143,7 @@ export function analyze(repo) {
     const commitCount = git("rev-list", "--count", "HEAD");
     gitFacts = {
       commits: commitCount ? +commitCount : null,
-      firstCommit: git("log", "--reverse", "--format=%as")?.split("\n")[0] ?? null,
+      firstCommit: git("log", "--max-parents=0", "--format=%as", "HEAD")?.split("\n").filter(Boolean).pop() ?? null, // root commit only, not the whole history
       lastCommit: git("log", "-1", "--format=%as"),
       contributors: git("shortlog", "-sn", "HEAD")?.split("\n").filter(Boolean).length ?? null,
       branch: git("rev-parse", "--abbrev-ref", "HEAD"),
