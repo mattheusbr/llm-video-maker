@@ -207,7 +207,6 @@ Write `projects/<id>/storyboard.json`:
    placeholders that look broken · dead zone (> 1.2 s with no motion and no new information) ·
    hook (strongest visual by 1.5 s) · pacing (median scene 2.5–5 s) · transcript-locked: frame
    must show what is said. Fix all in one round; do not re-snapshot unless a fix changed layout.
-4. anim-map was unavailable in the installed skill (made for 0.6.91): record "anim-map: unavailable" unless `animation-map.mjs` exists in the report.
 One pass only. Leftovers go to report.md as `DELIVERED WITH N OPEN ISSUES` (scene, time, what was
 tried); the render still proceeds. Never ship a degraded video as if it passed.
 
