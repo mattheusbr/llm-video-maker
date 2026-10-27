@@ -27,7 +27,7 @@ def main():
     model_file = models / "kokoro-v1.0.onnx"
     voices_file = models / "voices-v1.0.bin"
     if not (model_file.exists() and voices_file.exists()):
-        sys.exit(f"Kokoro weights missing in {models}. Run the setup in pacote-video-motion.md.")
+        sys.exit(f"Kokoro weights missing in {models}. Run the setup in docs/pacote-video-motion.md.")
 
     text = Path(args.text_file).read_text(encoding="utf-8").strip()
     if not text:

@@ -70,7 +70,7 @@ that `/make-video projects/<id>/brief.json` resumes there. One-line progress mes
 2. `npx hyperframes@0.6.91 doctor` → FFmpeg, FFprobe, Chrome, Node pass (Docker may fail; ignore).
 3. `mode: tts` → `.venv/Scripts/python -c "import kokoro_onnx, soundfile, faster_whisper"`, and
    `models/kokoro/kokoro-v1.0.onnx` + `voices-v1.0.bin` exist; with captions also
-   `models/whisper/model.bin`. Missing → stop and point to `pacote-video-motion.md`.
+   `models/whisper/model.bin`. Missing → stop and point to `docs/pacote-video-motion.md`.
    **Never** download a model inside a run.
 4. `mode: user-audio` → `ffprobe` the audio (codec + duration).
 Nothing past this runs until preflight is green.
