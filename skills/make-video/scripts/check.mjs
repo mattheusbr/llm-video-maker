@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One-shot VALIDATE gate: a single `hyperframes check --json` (lint + runtime + layout + contrast + craft in one
 // browser session), printed as one compact report so the model fixes everything in a single pass.
-// Usage: node check.mjs <project-dir> [--engine 0.8.206]
+// Usage: node check.mjs <project-dir> [--engine <version>]
 // Exit code: 0 = clean, 1 = something to fix.
 
 import { spawnSync } from "node:child_process";
@@ -11,9 +11,17 @@ import { existsSync, readFileSync } from "node:fs";
 const args = process.argv.slice(2);
 const dir = args.find((a) => !a.startsWith("--"));
 const engineIdx = args.indexOf("--engine");
-const engine = engineIdx >= 0 ? args[engineIdx + 1] : "0.8.206";
+// Default engine = the version installed in this project (same one `render` uses); fallback to the pin.
+function installedEngine() {
+  try {
+    return JSON.parse(readFileSync(join("node_modules", "hyperframes", "package.json"), "utf8")).version;
+  } catch {
+    return "0.8.206";
+  }
+}
+const engine = engineIdx >= 0 ? args[engineIdx + 1] : installedEngine();
 if (!dir) {
-  console.error("usage: node check.mjs <project-dir> [--engine 0.8.206]");
+  console.error("usage: node check.mjs <project-dir> [--engine <version>]");
   process.exit(2);
 }
 
@@ -24,9 +32,11 @@ const r = spawnSync("npx", [`hyperframes@${engine}`, "check", dir, "--json"], {
 });
 const out = (r.stdout || "").trim();
 const start = out.indexOf("{");
+const end = out.lastIndexOf("}");
 let res;
 try {
-  res = JSON.parse(out.slice(start));
+  if (start < 0 || end < start) throw new Error("no JSON");
+  res = JSON.parse(out.slice(start, end + 1));
 } catch {
   console.log(`CHECK: crashed — ${(r.stderr || out || "no output").slice(0, 400)}`);
   process.exit(1);
@@ -52,12 +62,17 @@ for (const section of ["lint", "runtime", "layout", "motion", "contrast", "craft
       if (seen.has(key)) continue;
       seen.add(key);
     }
-    if (sev === "error" || (section === "layout" && sev === "warning")) bad++;
+    if (sev === "error" || (section === "layout" && sev === "warning") || (section === "contrast" && sev !== "info")) bad++;
     const where = f.sourceFile ? basename(f.sourceFile) : f.selector || "";
     const at = f.time != null ? ` @${f.time}s` : "";
     const fix = sev === "error" ? ` | fix: ${cut(f.fixHint || f.suggestedColor || "")}` : "";
     lines.push(`${section.toUpperCase()} ${sev} ${f.code || ""} ${where}${at}: ${cut(f.message, 200)}${fix}`);
   }
+}
+// Fail closed: the gate said "not ok" (or the CLI failed) but no finding explained it.
+if (!bad && (res.ok === false || r.status > 1)) {
+  bad++;
+  lines.push(`NOTE: hyperframes check reported ok=${res.ok} (exit ${r.status}) with no listed finding; run \`npx hyperframes@${engine} check ${dir}\` by hand`);
 }
 if (res.browserSkipped) lines.push("NOTE: browser audits skipped (fix the lint errors first; layout/contrast were not checked)");
 
