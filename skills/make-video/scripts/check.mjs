@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// One-shot VALIDATE gate: lint + validate (console + WCAG contrast) + inspect (layout),
-// printed as one compact report so the model fixes everything in a single pass.
+// One-shot VALIDATE gate: a single `hyperframes check --json` (lint + runtime + layout + contrast + craft in one
+// browser session), printed as one compact report so the model fixes everything in a single pass.
 // Usage: node check.mjs <project-dir> [--engine 0.8.206]
 // Exit code: 0 = clean, 1 = something to fix.
 
 import { spawnSync } from "node:child_process";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
 const dir = args.find((a) => !a.startsWith("--"));
@@ -16,68 +17,49 @@ if (!dir) {
   process.exit(2);
 }
 
-function run(cmd) {
-  const r = spawnSync("npx", [`hyperframes@${engine}`, cmd, dir, "--json"], {
-    encoding: "utf8",
-    shell: process.platform === "win32",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  const out = (r.stdout || "").trim();
-  const start = out.indexOf("{");
-  if (start < 0) return { crashed: (r.stderr || out || "no output").slice(0, 400) };
-  try {
-    return JSON.parse(out.slice(start));
-  } catch {
-    return { crashed: out.slice(0, 400) };
-  }
+const r = spawnSync("npx", [`hyperframes@${engine}`, "check", dir, "--json"], {
+  encoding: "utf8",
+  shell: process.platform === "win32",
+  maxBuffer: 64 * 1024 * 1024,
+});
+const out = (r.stdout || "").trim();
+const start = out.indexOf("{");
+let res;
+try {
+  res = JSON.parse(out.slice(start));
+} catch {
+  console.log(`CHECK: crashed — ${(r.stderr || out || "no output").slice(0, 400)}`);
+  process.exit(1);
 }
 
 const cut = (s, n = 160) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
+
+// <project>/check.ignore: selectors (comma or line separated) the audits cannot judge: text on an <img>/SVG card
+// (contrast cannot be sampled; verify the colour pair by hand) and elements that bleed or enter on purpose.
+// Only list a selector after seeing it fine in the snapshot; never to silence a real overflow.
+const ignoreFile = join(dir, "check.ignore");
+const ignored = new Set(existsSync(ignoreFile) ? readFileSync(ignoreFile, "utf8").split(/[,\n]/).map((x) => x.trim()).filter(Boolean) : []);
+
 const lines = [];
 let bad = 0;
-
-const lint = run("lint");
-if (lint.crashed) {
-  lines.push(`LINT crashed: ${lint.crashed}`);
-  bad++;
-} else {
-  const seen = new Set();
-  for (const f of lint.findings || []) {
-    const key = `${f.code}|${f.file}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (f.severity === "error") bad++;
-    lines.push(`LINT ${f.severity} ${f.code} ${basename(f.file || "")}: ${cut(f.message)}${f.severity === "error" ? ` | fix: ${cut(f.fixHint)}` : ""}`);
+const seen = new Set();
+for (const section of ["lint", "runtime", "layout", "motion", "contrast", "craft", "audio"]) {
+  for (const f of res[section]?.findings || []) {
+    if (f.selector && ignored.has(f.selector)) continue;
+    const sev = f.severity || "info";
+    if (section === "lint") {
+      const key = `${f.code}|${f.sourceFile}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    if (sev === "error" || (section === "layout" && sev === "warning")) bad++;
+    const where = f.sourceFile ? basename(f.sourceFile) : f.selector || "";
+    const at = f.time != null ? ` @${f.time}s` : "";
+    const fix = sev === "error" ? ` | fix: ${cut(f.fixHint || f.suggestedColor || "")}` : "";
+    lines.push(`${section.toUpperCase()} ${sev} ${f.code || ""} ${where}${at}: ${cut(f.message, 200)}${fix}`);
   }
 }
-
-const val = run("validate");
-if (val.crashed) {
-  lines.push(`VALIDATE crashed: ${val.crashed}`);
-  bad++;
-} else {
-  for (const e of val.errors || []) {
-    bad++;
-    lines.push(`VALIDATE error: ${cut(typeof e === "string" ? e : JSON.stringify(e))}`);
-  }
-  for (const w of val.warnings || []) lines.push(`VALIDATE warn: ${cut(typeof w === "string" ? w : JSON.stringify(w))}`);
-  const low = (val.contrast || []).filter((c) => c.wcagAA === false);
-  for (const c of low) {
-    bad++;
-    lines.push(`CONTRAST ${c.ratio} @${c.time}s ${c.selector} "${cut(c.text, 40)}" fg ${c.fg} on ${c.bg}`);
-  }
-}
-
-const insp = run("inspect");
-if (insp.crashed) {
-  lines.push(`INSPECT crashed: ${insp.crashed}`);
-  bad++;
-} else {
-  for (const i of insp.issues || []) {
-    if (i.severity !== "info") bad++;
-    lines.push(`INSPECT ${i.severity || ""} ${cut(JSON.stringify(i), 240)}`);
-  }
-}
+if (res.browserSkipped) lines.push("NOTE: browser audits skipped (fix the lint errors first; layout/contrast were not checked)");
 
 console.log(bad ? `CHECK: ${bad} issue(s) to fix` : "CHECK: clean");
 for (const l of lines) console.log(l);

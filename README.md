@@ -14,7 +14,7 @@ design, storyboard, assets, composição em HTML/GSAP, validação e render com 
 - **Narração e legendas em pt-BR, locais:** `tts_pt.py` (Kokoro-82M, voz `pf_dora` por padrão) e
   `captions_pt.py` (faster-whisper `base` multilíngue, palavra a palavra, áudio decodificado pelo FFmpeg).
   O motor de voz do schema é só `kokoro`.
-- **Validação em uma passada:** `check.mjs` roda lint, validate (console e contraste) e inspect e imprime um
+- **Validação em uma passada:** `check.mjs` roda um único `hyperframes check` (lint, runtime, layout, contraste e craft) e imprime um
   relatório compacto.
 - **Economia de tokens:** `make-video/SKILL.md` reescrito (de 28 KB para cerca de 15 KB) com regras de trabalho
   (sem worktree, sem reescrever arquivos, um passe de validação), `design/design.md` fixo opcional e

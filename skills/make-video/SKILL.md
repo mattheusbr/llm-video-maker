@@ -21,7 +21,7 @@ composition) is yours, guided by the `hyperframes` skill. Every stage writes its
 - Batch independent shell commands into one call. Print only what you need (pipe through
   `head`/`grep`).
 - Validation is `check.mjs` (one command, stage 5). Fix every finding of its report in ONE edit
-  round, then re-run once. Do not run lint/validate/inspect separately.
+  round, then re-run once. Do not run lint/validate/inspect/check separately.
 - Look at snapshots once (stage 5.3) and the final strip once (stage 7). No repeat looks.
 
 ## Setup (already installed; do not reinstall)
@@ -194,8 +194,8 @@ Write `projects/<id>/storyboard.json`:
    `data-volume` > 1 if quiet); check once in stage 7.
 
 ### 5 — VALIDATE (hard gate, ONE pass)
-1. `node "$SKILL_DIR"/scripts/check.mjs projects/<id>` → one compact report: lint + validate
-   (console + WCAG contrast) + inspect (overflow/clip). Exit 0 = clean. Warnings of the kind
+1. `node "$SKILL_DIR"/scripts/check.mjs projects/<id>` → one compact report from a single `hyperframes check`: lint + runtime
+   + layout (overflow/clip) + WCAG contrast + craft. Exit 0 = clean. Warnings of the kind
    `timeline_track_too_dense`, `duplicate_media_discovery_risk`, `overlapping_gsap_tweens` on
    `__unresolved__` are known false positives here; do not chase them.
 2. Fix EVERY reported issue in one edit round (batch the edits), then run `check.mjs` once more.
