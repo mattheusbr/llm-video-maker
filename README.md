@@ -70,7 +70,7 @@ uma execução interrompida).
 ## Requisitos
 
 Node 22 ou superior, FFmpeg e Google Chrome. A skill confere tudo com
-`npx hyperframes@0.6.91 doctor` e para cedo se faltar algo. Chaves opcionais de API
+`npx hyperframes@0.8.206 doctor` e para cedo se faltar algo. Chaves opcionais de API
 (`PEXELS_API_KEY`, `PIXABAY_API_KEY`, `GIPHY_API_KEY`, `TENOR_API_KEY`, `FREESOUND_API_KEY`,
 `OPENAI_API_KEY`) liberam mídia real; sem elas, o pipeline usa ícones e logos embutidos e
 placeholders.

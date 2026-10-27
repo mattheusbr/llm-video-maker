@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One-shot VALIDATE gate: lint + validate (console + WCAG contrast) + inspect (layout),
 // printed as one compact report so the model fixes everything in a single pass.
-// Usage: node check.mjs <project-dir> [--engine 0.6.91]
+// Usage: node check.mjs <project-dir> [--engine 0.8.206]
 // Exit code: 0 = clean, 1 = something to fix.
 
 import { spawnSync } from "node:child_process";
@@ -10,9 +10,9 @@ import { basename } from "node:path";
 const args = process.argv.slice(2);
 const dir = args.find((a) => !a.startsWith("--"));
 const engineIdx = args.indexOf("--engine");
-const engine = engineIdx >= 0 ? args[engineIdx + 1] : "0.6.91";
+const engine = engineIdx >= 0 ? args[engineIdx + 1] : "0.8.206";
 if (!dir) {
-  console.error("usage: node check.mjs <project-dir> [--engine 0.6.91]");
+  console.error("usage: node check.mjs <project-dir> [--engine 0.8.206]");
   process.exit(2);
 }
 
